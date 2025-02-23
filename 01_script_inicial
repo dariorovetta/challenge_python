@@ -24,14 +24,14 @@ print("Cantidad de artículos encontrados:", len(articles))
 
 for article in articles:
     try:
-        # Intentar extraer el título
+        # Intentar extraer el kicker
         try:
-            title = article.find_element(By.CSS_SELECTOR, ".volanta.fuente_roboto_slab").text
+            kicker = article.find_element(By.CSS_SELECTOR, ".volanta.fuente_roboto_slab").text
         except:
-            title = None  # Si no se encuentra, se deja como None
+            kicker = None  # Si no se encuentra, se deja como None
 
         # Extraer kicker, imagen y enlace
-        kicker = article.find_element(By.CSS_SELECTOR, ".titulo.fuente_roboto_slab").text
+        title = article.find_element(By.CSS_SELECTOR, ".titulo.fuente_roboto_slab").text
         image = article.find_element(By.CSS_SELECTOR, ".imagen img").get_attribute("src")
         link = article.find_element(By.CSS_SELECTOR, ".titulo.fuente_roboto_slab a").get_attribute("href")
 
@@ -71,20 +71,20 @@ driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), opti
 df = pd.read_excel(output_path)
 
 for index, row in df.iterrows():
-    if pd.isna(row["Title"]):  # Si el título es None o NaN
+    if pd.isna(row["Kicker"]):  # Si el Kicker es None o NaN
         try:
             driver.get(row["Link"])  # Ir a la noticia
             time.sleep(2)  # Esperar a que cargue la página
 
             # Intentar extraer el título desde el XPath dado
             try:
-                title = driver.find_element(By.XPATH, "/html/body/div[4]/div[5]/div/div[2]/div").text
+                kicker = driver.find_element(By.XPATH, "/html/body/div[4]/div[5]/div/div[2]/div").text
             except:
-                title = "Título no encontrado"
+                kicker = "Kicker no encontrado"
 
             # Actualizar el DataFrame
-            df.at[index, "Title"] = title
-            print(f"Título actualizado para: {row['Link']} → {title}")
+            df.at[index, "Kicker"] = kicker
+            print(f"Kicker actualizado para: {row['Link']} → {kicker}")
 
         except Exception as e:
             print(f"Error al actualizar título para {row['Link']}: {e}")
