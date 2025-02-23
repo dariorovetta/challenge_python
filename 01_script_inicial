@@ -84,9 +84,9 @@ def capitalized_words(title):
 def process_news_data(df):
     """Añade métricas al DataFrame de noticias."""
     
-    df["Word Count"] = df["Title"].apply(count_words)
-    df["Character Count"] = df["Title"].apply(count_chars)
-    df["Capitalized Words"] = df["Title"].apply(lambda x: ", ".join(capitalized_words(x)))
+    df["Word_Count"] = df["Title"].apply(count_words)
+    df["Character_Count"] = df["Title"].apply(count_chars)
+    df["Capitalized_Words"] = df["Title"].apply(lambda x: ", ".join(capitalized_words(x)))
 
     print("Post-procesamiento completado.")
     return df
@@ -96,7 +96,7 @@ def upload_to_bigquery(df):
     """Sube los datos a BigQuery."""
 
     # Configurar cliente de BigQuery con credenciales
-    client = bigquery.Client.from_service_account_json("cloudrun_bigquery_service.json")
+    client = bigquery.Client.from_service_account_json("05_challenge_we_are_pipol_python/cloudrun_bigquery_service.json")
 
     # Definir el ID de proyecto, dataset y tabla
     project_id = "mi-proyecto-cloudrun"  # Reemplaza con tu ID de proyecto
@@ -107,8 +107,10 @@ def upload_to_bigquery(df):
 
     # Configuración de la carga
     job_config = bigquery.LoadJobConfig(
-        write_disposition="WRITE_APPEND"  # Agregar nuevos registros sin sobrescribir
+        write_disposition="WRITE_APPEND",
+        source_format=bigquery.SourceFormat.PARQUET  # Forzar el uso de PyArrow
     )
+
 
     # Cargar datos a BigQuery
     try:
