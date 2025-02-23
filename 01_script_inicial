@@ -1,97 +1,152 @@
 import time
-import os
 import pandas as pd
+import re
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
+from google.cloud import bigquery
 
-# Configurar el driver de Selenium (Chrome)
-options = Options()
-driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+### --- 1. FUNCIONES PARA SCRAPING --- ###
+def extract_initial_news(driver):
+    """Extrae noticias desde Yogonet en una primera etapa, dejando None en los kickers faltantes."""
+    
+    url = "https://www.yogonet.com/international/"
+    driver.get(url)
 
-# URL de la página de noticias
-url = "https://www.yogonet.com/international/"
-driver.get(url)
+    news_data = []
+    articles = driver.find_elements(By.CSS_SELECTOR, ".contenedor_dato_modulo")
 
-# Lista para almacenar los datos
-news_data = []
+    print(f"Cantidad de artículos encontrados: {len(articles)}")
 
-# Encuentra los elementos que contienen las noticias
-articles = driver.find_elements(By.CSS_SELECTOR, ".contenedor_dato_modulo")
-print("Cantidad de artículos encontrados:", len(articles))
-
-for article in articles:
-    try:
-        # Intentar extraer el kicker
+    for article in articles:
         try:
             kicker = article.find_element(By.CSS_SELECTOR, ".volanta.fuente_roboto_slab").text
         except:
-            kicker = None  # Si no se encuentra, se deja como None
+            kicker = None  # Dejar en None si no se encuentra
 
-        # Extraer kicker, imagen y enlace
-        title = article.find_element(By.CSS_SELECTOR, ".titulo.fuente_roboto_slab").text
-        image = article.find_element(By.CSS_SELECTOR, ".imagen img").get_attribute("src")
-        link = article.find_element(By.CSS_SELECTOR, ".titulo.fuente_roboto_slab a").get_attribute("href")
+        try:
+            title = article.find_element(By.CSS_SELECTOR, ".titulo.fuente_roboto_slab").text
+            image = article.find_element(By.CSS_SELECTOR, ".imagen img").get_attribute("src")
+            link = article.find_element(By.CSS_SELECTOR, ".titulo.fuente_roboto_slab a").get_attribute("href")
+        except Exception as e:
+            print(f"Error al extraer datos de una noticia: {e}")
+            continue  # Salta a la siguiente noticia en caso de error
 
-        # Agregar a la lista
         news_data.append({
             "Title": title,
             "Kicker": kicker,
             "Image": image,
             "Link": link
         })
-    except Exception as e:
-        print(f"Error al extraer datos de una noticia: {e}")
 
-# Cerrar el navegador
-driver.quit()
+    return pd.DataFrame(news_data)
 
-# Ruta de almacenamiento del archivo
-output_path = "05_challenge_we_are_pipol_python/noticias.xlsx"
-
-# Asegurar que la carpeta existe
-os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
-# Crear un DataFrame con pandas y guardar en Excel
-df = pd.DataFrame(news_data)
-df.to_excel(output_path, index=False)
-
-print(f"Los datos se guardaron correctamente en {output_path}")
-
-# -----------------------
-# SEGUNDA ETAPA: ACTUALIZAR TITULOS QUE SON None
-# -----------------------
-
-# Volver a abrir el navegador
-driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-
-# Cargar el Excel
-df = pd.read_excel(output_path)
-
-for index, row in df.iterrows():
-    if pd.isna(row["Kicker"]):  # Si el Kicker es None o NaN
-        try:
-            driver.get(row["Link"])  # Ir a la noticia
-            time.sleep(2)  # Esperar a que cargue la página
-
-            # Intentar extraer el título desde el XPath dado
+def update_missing_kickers(driver, df):
+    """Accede a los enlaces de las noticias y actualiza los kickers que son None."""
+    
+    for index, row in df.iterrows():
+        if row["Kicker"] is None:  # Solo accede a los enlaces donde falta el kicker
             try:
+                driver.get(row["Link"])
+                time.sleep(2)  # Esperar a que la página cargue completamente
+                
                 kicker = driver.find_element(By.XPATH, "/html/body/div[4]/div[5]/div/div[2]/div").text
+                df.at[index, "Kicker"] = kicker
+                print(f"Kicker actualizado para: {row['Title']} → {kicker}")
             except:
-                kicker = "Kicker no encontrado"
+                df.at[index, "Kicker"] = "Kicker no encontrado"
 
-            # Actualizar el DataFrame
-            df.at[index, "Kicker"] = kicker
-            print(f"Kicker actualizado para: {row['Link']} → {kicker}")
+    return df
 
-        except Exception as e:
-            print(f"Error al actualizar título para {row['Link']}: {e}")
+### --- 2. FUNCIONES PARA POST-PROCESAMIENTO --- ###
+def count_words(title):
+    """Cuenta la cantidad de palabras en el título."""
+    if pd.isna(title):  
+        return 0
+    return len(str(title).split())
 
-# Guardar el archivo actualizado
-df.to_excel(output_path, index=False)
-print(f"Archivo actualizado correctamente en {output_path}")
+def count_chars(title):
+    """Cuenta la cantidad de caracteres en el título."""
+    if pd.isna(title):
+        return 0
+    return len(str(title))
 
-# Cerrar el navegador
-driver.quit()
+def capitalized_words(title):
+    """Devuelve una lista de palabras con la primera letra en mayúscula."""
+    if pd.isna(title):
+        return []
+    
+    cleaned_title = re.sub(r"[^a-zA-Z\s]", "", title)  
+    return [word for word in cleaned_title.split() if word and word[0].isupper()]
+
+def process_news_data(df):
+    """Añade métricas al DataFrame de noticias."""
+    
+    df["Word Count"] = df["Title"].apply(count_words)
+    df["Character Count"] = df["Title"].apply(count_chars)
+    df["Capitalized Words"] = df["Title"].apply(lambda x: ", ".join(capitalized_words(x)))
+
+    print("Post-procesamiento completado.")
+    return df
+
+### --- 3. FUNCIÓN PARA CARGAR A BIGQUERY --- ###
+def upload_to_bigquery(df):
+    """Sube los datos a BigQuery."""
+
+    # Configurar cliente de BigQuery con credenciales
+    client = bigquery.Client.from_service_account_json("cloudrun_bigquery_service.json")
+
+    # Definir el ID de proyecto, dataset y tabla
+    project_id = "mi-proyecto-cloudrun"  # Reemplaza con tu ID de proyecto
+    dataset_id = "scraping_dataset"  # Nombre del dataset en BigQuery
+    table_id = f"{project_id}.{dataset_id}.noticias"  # Tabla en BigQuery
+
+    print(f"Cargando datos en: {table_id}...")
+
+    # Configuración de la carga
+    job_config = bigquery.LoadJobConfig(
+        write_disposition="WRITE_APPEND"  # Agregar nuevos registros sin sobrescribir
+    )
+
+    # Cargar datos a BigQuery
+    try:
+        job = client.load_table_from_dataframe(df, table_id, job_config=job_config)
+        job.result()  # Esperar a que la carga termine
+        print("✅ Datos cargados correctamente en BigQuery.")
+    except Exception as e:
+        print(f"❌ Error al subir datos a BigQuery: {e}")
+
+### --- 4. FUNCIÓN PRINCIPAL --- ###
+def main():
+    """Ejecuta todo el proceso de scraping y post-procesamiento en un solo flujo."""
+    
+    # Configurar Selenium
+    options = Options()
+    options.add_argument("--headless")
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+    # Primera etapa: extraer datos iniciales
+    df_news = extract_initial_news(driver)
+    print("Primera extracción completada.")
+    
+    # Segunda etapa: actualizar kickers faltantes
+    df_news = update_missing_kickers(driver, df_news)
+    print("Actualización de kickers completada.")
+
+    # Tercera etapa: post-procesamiento
+    df_news = process_news_data(df_news)
+    print("Post-procesamiento finalizado.")
+
+    driver.quit()
+
+    # Cuarta etapa: subir a BigQuery
+    upload_to_bigquery(df_news)
+
+    return df_news
+
+
+# Ejecutar el proceso completo
+df_final = main()
+print(df_final.head())  # Mostrar primeras filas para verificar
