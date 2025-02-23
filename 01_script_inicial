@@ -1,0 +1,52 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+
+# Configurar el driver de Selenium (Chrome)
+options = webdriver.ChromeOptions()
+# No usar --headless para que se vea la ventana gráfica
+# options.add_argument("--headless")  # No usar headless si quieres ver la ventana gráfica
+
+# Usar webdriver_manager para descargar y configurar automáticamente el ChromeDriver
+driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+# URL de la página de noticias que deseas extraer
+url = "https://www.yogonet.com/international/"
+
+# Acceder a la página
+driver.get(url)
+
+# Extraer los datos de las noticias
+news_data = []
+
+# Encuentra los elementos que contienen los datos (ajusta los selectores según la estructura de la página)
+articles = driver.find_elements(By.CSS_SELECTOR, "contenedor_dato_modulo")  # Selector de cada noticia
+
+for article in articles:
+    try:
+        # Extraer título, subtítulo, imagen y enlace
+        title = article.find_element(By.CSS_SELECTOR, "volanta.fuente_roboto_slab").text
+        kicker = article.find_element(By.CSS_SELECTOR, "titulo.fuente_roboto_slab").text
+        image = article.find_element(By.CSS_SELECTOR, "imagen").get_attribute("href")
+        link = article.find_element(By.CSS_SELECTOR, "volanta.fuente_roboto_slab").get_attribute("href")
+
+        # Guardar los datos extraídos en un diccionario
+        news_data.append({
+            "title": title,
+            "kicker": kicker,
+            "image": image,
+            "link": link
+        })
+    except Exception as e:
+        print(f"Error al extraer datos de una noticia: {e}")
+
+# Imprimir los datos extraídos
+for data in news_data:
+    print(data)
+
+# Cerrar el navegador después de un pequeño retraso para ver la ventana
+input("Presiona Enter para cerrar el navegador...")  # Esto mantiene la ventana abierta hasta que presiones Enter
+driver.quit()
+
+
