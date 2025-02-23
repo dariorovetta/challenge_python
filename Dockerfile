@@ -5,9 +5,14 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y \
     chromium \
     chromium-driver \
+    wget \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Configurar variables de entorno para Chrome y ChromeDriver
+# Verificar instalación de Chrome y ChromeDriver
+RUN which chromium && which chromedriver
+
+# Configurar variables de entorno
 ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 

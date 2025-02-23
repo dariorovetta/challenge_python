@@ -7,6 +7,8 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 from google.cloud import bigquery
+import os
+import platform
 
 ### --- 1. FUNCIONES PARA SCRAPING --- ###
 def extract_initial_news(driver):
@@ -93,24 +95,32 @@ def process_news_data(df):
 
 ### --- 3. FUNCIÓN PARA CARGAR A BIGQUERY --- ###
 def upload_to_bigquery(df):
-    """Sube los datos a BigQuery."""
+    """Sube los datos a BigQuery, adaptando la ruta de credenciales según el entorno."""
 
-    # Configurar cliente de BigQuery con credenciales
-    client = bigquery.Client.from_service_account_json("05_challenge_we_are_pipol_python/cloudrun_bigquery_service.json")
+    # Detectar si el script se ejecuta en Windows o en Docker (Linux)
+    if platform.system() == "Windows":
+        print("Ejecutando en Windows...")
+        credentials_path = "C:/Users/dario/OneDrive/Escritorio/daroPotterHead/05_challenge_we_are_pipol_python/cloudrun_bigquery_service.json"
+    else:
+        print("Ejecutando en Docker (Linux)...")
+        credentials_path = "/app/cloudrun_bigquery_service.json"
 
-    # Definir el ID de proyecto, dataset y tabla
+    # Verificar si el archivo de credenciales existe antes de intentar usarlo
+    if not os.path.exists(credentials_path):
+        raise FileNotFoundError(f"❌ Archivo de credenciales no encontrado: {credentials_path}")
+
+    # Configurar cliente de BigQuery
+    client = bigquery.Client.from_service_account_json(credentials_path)
+
+    # Definir el ID de proyecto y la tabla
     project_id = "mi-proyecto-cloudrun"  # Reemplaza con tu ID de proyecto
     dataset_id = "scraping_dataset"  # Nombre del dataset en BigQuery
-    table_id = f"{project_id}.{dataset_id}.noticias"  # Tabla en BigQuery
+    table_id = f"{project_id}.{dataset_id}.noticias"  # Nombre completo de la tabla
 
     print(f"Cargando datos en: {table_id}...")
 
     # Configuración de la carga
-    job_config = bigquery.LoadJobConfig(
-        write_disposition="WRITE_APPEND",
-        source_format=bigquery.SourceFormat.PARQUET  # Forzar el uso de PyArrow
-    )
-
+    job_config = bigquery.LoadJobConfig(write_disposition="WRITE_APPEND")
 
     # Cargar datos a BigQuery
     try:
@@ -119,18 +129,26 @@ def upload_to_bigquery(df):
         print("✅ Datos cargados correctamente en BigQuery.")
     except Exception as e:
         print(f"❌ Error al subir datos a BigQuery: {e}")
-        
+
 ### --- 4. FUNCIÓN WEB DRIVER --- ###
 def get_driver():
-    """Configura y devuelve una instancia del WebDriver de Chrome en modo headless."""
+    """Configura y devuelve una instancia del WebDriver de Chrome, adaptado para Windows y Docker."""
+
     options = Options()
     options.add_argument("--headless")  # Modo sin interfaz gráfica
-    options.add_argument("--no-sandbox")  # Evitar problemas de permisos
-    options.add_argument("--disable-dev-shm-usage")  # Usar /tmp en vez de /dev/shm
+    options.add_argument("--no-sandbox")  # Requerido para entornos Docker
+    options.add_argument("--disable-dev-shm-usage")  # Usar /tmp en lugar de /dev/shm
     options.add_argument("--disable-gpu")  # Deshabilitar aceleración de hardware
 
-    # Si estás en Windows, usa la ruta donde instalaste ChromeDriver
-    service = Service("C:/WebDriver/chromedriver.exe")  # Windows
+    # Detectar si el script se ejecuta en Windows o en Docker (Linux)
+    if platform.system() == "Windows":
+        print("Ejecutando en Windows...")
+        options.binary_location = "C:/Program Files/Google/Chrome/Application/chrome.exe"  # Ruta de Chrome en Windows
+        service = Service("C:/WebDriver/chromedriver.exe")  # Ruta de ChromeDriver en Windows
+    else:
+        print("Ejecutando en Docker (Linux)...")
+        options.binary_location = "/usr/bin/chromium"  # Ruta de Chrome en Docker
+        service = Service("/usr/bin/chromedriver")  # Ruta de ChromeDriver en Docker
 
     driver = webdriver.Chrome(service=service, options=options)
     return driver
