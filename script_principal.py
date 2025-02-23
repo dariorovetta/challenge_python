@@ -119,15 +119,29 @@ def upload_to_bigquery(df):
         print("✅ Datos cargados correctamente en BigQuery.")
     except Exception as e:
         print(f"❌ Error al subir datos a BigQuery: {e}")
+        
+### --- 4. FUNCIÓN WEB DRIVER --- ###
+def get_driver():
+    """Configura y devuelve una instancia del WebDriver de Chrome en modo headless."""
+    options = Options()
+    options.add_argument("--headless")  # Modo sin interfaz gráfica
+    options.add_argument("--no-sandbox")  # Evitar problemas de permisos
+    options.add_argument("--disable-dev-shm-usage")  # Usar /tmp en vez de /dev/shm
+    options.add_argument("--disable-gpu")  # Deshabilitar aceleración de hardware
 
-### --- 4. FUNCIÓN PRINCIPAL --- ###
+    # Si estás en Windows, usa la ruta donde instalaste ChromeDriver
+    service = Service("C:/WebDriver/chromedriver.exe")  # Windows
+
+    driver = webdriver.Chrome(service=service, options=options)
+    return driver
+
+
+### --- 5. FUNCIÓN PRINCIPAL --- ###
 def main():
     """Ejecuta todo el proceso de scraping y post-procesamiento en un solo flujo."""
     
-    # Configurar Selenium
-    options = Options()
-    options.add_argument("--headless")
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    # Iniciar web driver
+    driver = get_driver()
 
     # Primera etapa: extraer datos iniciales
     df_news = extract_initial_news(driver)
